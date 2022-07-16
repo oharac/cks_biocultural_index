@@ -169,17 +169,25 @@ bcv_by_continent <- bcv_raw %>%
   select(continent, iucn_code, cult_code, bcv_code) %>%
   group_by(continent) %>%
   mutate(n = n()) %>%
-  group_by(continent, bcv_code) %>%
+  gather(code, value, ends_with('code')) %>%
+  mutate(value = case_when(value %in% c('LC', 'NT') ~ '!T',
+                           value == 'CR' ~ 'EN',
+                           TRUE ~ value)) %>%
+  group_by(continent, code, value) %>%
   summarize(n = first(n),
             n_cat = n(),
             pct_cat = n_cat / n) %>%
-  mutate(bcv_code = factor(bcv_code, levels = c('!T', 'VU', 'EN', 'DD'))) %>%
+  mutate(value = factor(value, levels = c('!T', 'VU', 'EN', 'DD'))) %>%
   ungroup() %>%
-  arrange(bcv_code, pct_cat) %>%
-  mutate(continent_lbl = fct_inorder(str_to_title(continent)),
-         n_lbl = paste0('n = ', n))
+  arrange(value, pct_cat) %>%
+  mutate(continent_lbl = paste0(str_to_title(continent), '\n(n = ', n, ')'),
+         continent_lbl = fct_inorder(continent_lbl),
+         code = case_when(code == 'bcv_code' ~ 'Biocultural status',
+                          code == 'cult_code' ~ 'Cultural status',
+                          code == 'iucn_code' ~ 'Biological status',
+                          TRUE ~ 'oops'))
 
-ggplot(bcv_by_continent, aes(y = continent_lbl, x = pct_cat, fill = fct_rev(bcv_code))) +
+ggplot(bcv_by_continent, aes(y = continent_lbl, x = pct_cat, fill = fct_rev(value))) +
   geom_col(position = 'stack') +
   scale_fill_manual(values = c('#4B0055', '#009B95', '#FDE333', 'grey70'),
                     limits = c('!T', 'VU', 'EN', 'DD')) +
@@ -188,13 +196,14 @@ ggplot(bcv_by_continent, aes(y = continent_lbl, x = pct_cat, fill = fct_rev(bcv_
                      labels = c('0%', '25%', '50%', '75%', '100%'),
                      limits = c(0, 1.1),
                      expand = c(0, 0)) +
-  geom_text(aes(label = n_lbl), x = 1.01, hjust = 0, size = 2) +
   theme(axis.title = element_blank(),
+        axis.text.x = element_text(angle = 90, vjust = .5, hjust = 1),
         panel.grid.major = element_blank()) +
-  labs(fill = 'Biocultural\nstatus')
+  labs(fill = 'Biocultural\nstatus') +
+  facet_wrap(~ code)
 
 plot_f <- here('fig_bcv_by_continent.png')
-ggsave(plot_f, height = 2, width = 5, dpi = 300)
+ggsave(plot_f, height = 2.5, width = 5, dpi = 300)
 
 knitr::include_graphics(plot_f)
 ```
