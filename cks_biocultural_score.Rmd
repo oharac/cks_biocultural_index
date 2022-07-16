@@ -1,0 +1,310 @@
+---
+title: "CKS Biocultural index exploration"
+author: "Casey O'Hara"
+date: "6/10/2022"
+output: html_document
+---
+
+```{r setup, echo = TRUE, warning = FALSE, message = FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+library(tidyverse)
+library(here)
+library(readxl)
+```
+
+### Read in and clean up data
+
+```{r}
+iucn_cats <- c('data deficient'  = 'DD',
+               'least concern'   = 'LC', 
+               'near threatened' = 'NT', 
+               'vulnerable'      = 'VU',
+               'endangered'      = 'EN',
+               'critically endangered' = 'CR')
+cult_cats <- c('data deficient' = 'DD',
+               'not threatened' = '!T',
+               'vulnerable'     = 'VU',
+               'endangered'     = 'EN')
+
+bcv_score_df <- tribble(
+  ~iucn_code, ~cult_code,  ~bcv_index,  ~bcv_code,
+        'LC',       '!T',        '!T',       '!T',
+        'LC',       'VU',        'V2',       'VU',
+        'LC',       'EN',        'E2',       'EN',
+        'LC',       'DD',        'DD',       'DD',
+        'NT',       '!T',        '!T',       '!T',
+        'NT',       'VU',        'V1',       'VU',
+        'NT',       'EN',        'E2',       'EN',
+        'NT',       'DD',        'DD',       'DD',
+        'VU',       '!T',        'V1',       'VU',
+        'VU',       'VU',        'V1',       'VU',
+        'VU',       'EN',        'E2',       'EN',
+        'VU',       'DD',        'V1',       'VU',
+        'EN',       '!T',        'E1',       'EN',
+        'EN',       'VU',        'E1',       'EN',
+        'EN',       'EN',        'E1',       'EN',
+        'EN',       'DD',        'E1',       'EN',
+        'CR',       '!T',        'E1',       'EN',
+        'CR',       'VU',        'E1',       'EN',
+        'CR',       'EN',        'E1',       'EN',
+        'CR',       'DD',        'E1',       'EN',
+        'CR',       'EX',        'E1',       'EN',
+        'DD',       '!T',        'DD',       'DD',
+        'DD',       'VU',        'V3',       'VU',
+        'DD',       'EN',        'E1',       'EN',
+        'DD',       'DD',        'DD',       'DD')
+bcv_raw <- readxl::read_excel(here('data/CKS_Superclean.xlsx')) %>%
+  janitor::clean_names() %>%
+  mutate(across(everything(), tolower)) %>%
+  mutate(iucn_code = iucn_cats[biological],
+         cult_code = cult_cats[cultural]) %>%
+  left_join(bcv_score_df, by = c('iucn_code', 'cult_code')) %>%
+  filter(!is.na(cult_code) & !is.na(iucn_code)) %>%
+  mutate(bcv_code = factor(bcv_code, levels = cult_cats),
+         iucn_code = factor(iucn_code, levels = iucn_cats),
+         cult_code = factor(cult_code, levels = cult_cats))
+check_df <- readxl::read_excel(here('data/Species_Index.xlsx')) %>%
+  group_by(IUCN_Status) %>%
+  summarize(n = n())
+```
+
+### Examine distribution of values
+
+```{r}
+cat_clr <- data.frame(
+  bcv = cult_cats,
+  clr = c('grey80', 'green3', 'yellow', 'orange')
+)
+table_grid_df <- bcv_raw %>%
+  group_by(iucn_code, cult_code, bcv_code) %>%
+  summarize(n_spp = n(), .groups = 'drop')
+
+table_from_data <- ggplot(table_grid_df, aes(x = cult_code, y = fct_rev(iucn_code))) +
+  geom_tile(aes(fill = bcv_code), color = 'grey40') +
+  geom_text(aes(label = n_spp), show.legend = FALSE) +
+  scale_fill_manual(values = cat_clr$clr, breaks = cat_clr$bcv) +
+  theme_minimal() +
+  labs(x = 'Cultural vitality', y = 'IUCN status')
+
+table_from_data
+```
+
+This matches Viki's table (with a couple of numbers off).
+
+### Bootstrap to estimate SEs
+
+Distribution of biocultural index scores per current sample:
+```{r}
+sample_sum_df <- bcv_raw %>%
+  group_by(bcv_code) %>%
+  summarize(n_spp = n(),
+            pct_spp = n_spp / nrow(.))
+
+ggplot(sample_sum_df, aes(x = bcv_code, y = n_spp, fill = bcv_code)) +
+  geom_col(color = 'grey20') +
+  scale_fill_manual(values = cat_clr$clr, breaks = cat_clr$bcv) +
+  theme_minimal() +
+  labs(x = 'BCV code', y = 'Number of spp')
+```
+
+If the sample is representative of the population (of cultural keystone species globally) then this will give an estimate of uncertainty around the number of spp in each bin.  However, we know this sample is problematic!  So not sure if this is useful...
+
+For bootstrapping, sample with replacement for one iteration isn't any different than sample with replacement for two (or a thousand) iterations.
+
+```{r}
+sims <- 1000
+nspp <- nrow(bcv_raw)
+
+set.seed(42)
+bs_df <- data.frame(sim = rep(1:sims, each = nspp)) %>%
+  mutate(bcv_code = sample(bcv_raw$bcv_code, size = n(), replace = TRUE)) %>%
+  group_by(sim, bcv_code) %>%
+  summarize(n_spp = n()) 
+se_df <- bs_df %>%
+  group_by(bcv_code) %>%
+  summarize(n_mean = mean(n_spp),
+            n_sdev = sd(n_spp),
+            n_02.5 = quantile(n_spp, 0.025),
+            n_97.5 = quantile(n_spp, 0.975),
+            pct_mean = n_mean / nspp,
+            pct_sdev = n_sdev / nspp,
+            pct_02.5 = n_02.5 / nspp,
+            pct_97.5 = n_97.5 / nspp)
+
+ggplot(se_df, aes(x = bcv_code)) +
+  geom_col(aes(y = n_mean, fill = bcv_code), color = 'grey40', show.legend = FALSE) +
+  geom_point(data = sample_sum_df, 
+             aes(y = n_spp), size = 3) +
+  geom_errorbar(aes(ymin = n_mean - n_sdev, ymax = n_mean + n_sdev), 
+                width = .2) +
+  geom_errorbar(aes(ymin = n_02.5, ymax = n_97.5), color = 'red',
+                width = .4) +
+  scale_fill_manual(values = cat_clr$clr, breaks = cat_clr$bcv) +
+  theme_minimal() +
+  labs(x = 'Biocultural vitality', y = 'Number of spp')
+```
+
+### Randomize IUCN and cultural vitality
+
+What if IUCN status distribution is representative, and cultural vitality distribution is representative, but the two vars are not independent?  Let's generate samples in which the two ARE independent. Run a bunch of sims, randomly sampling from IUCN and from cultural vitality; score them per the score matrix; then check the distributions against those based on the pre-scored BCV index.
+
+```{r chi squared test}
+cks_tbl <- table_grid_df %>%
+  select(-bcv_code) %>%
+  spread(cult_code, n_spp) %>%
+  select(-iucn_code) %>%
+  mutate(across(everything(), ~ifelse(is.na(.x), 0, .x)))
+
+chi2 <- chisq.test(cks_tbl)
+
+chi2
+
+sqrt(chi2$statistic / sum(cks_tbl))
+```
+
+
+```{r}
+sims <- 1000
+nspp <- nrow(bcv_raw)
+
+set.seed(42)
+indep_bs_df <- data.frame(sim = rep(1:sims, each = nspp)) %>%
+  mutate(iucn_code = sample(bcv_raw$iucn_code, size = n(), replace = TRUE),
+         cult_code = sample(bcv_raw$cult_code, size = n(), replace = TRUE)) %>%
+  ### what if there is a connection between cultural and IUCN categories?
+  ### let's add some bias and see what happens!
+  # mutate(x = runif(0, 1, n = n())) %>%
+  # mutate(cult_code = as.character(cult_code),
+  #        cult_code = ifelse(iucn_code == 'LC' & x < .5, '!T', cult_code),
+  #        cult_code = ifelse(iucn_code == 'CR' & x < .5, 'EN', cult_code)) %>%
+  left_join(bcv_score_df, by = c('iucn_code', 'cult_code')) %>%
+  mutate(bcv_code = factor(bcv_code, levels = cult_cats))
+  
+indep_se_df <- indep_bs_df %>%
+  group_by(sim, bcv_code) %>%
+  summarize(n_spp = n()) %>%
+  group_by(bcv_code) %>%
+  summarize(n_mean = mean(n_spp),
+            n_sdev = sd(n_spp),
+            n_02.5 = quantile(n_spp, 0.025),
+            n_97.5 = quantile(n_spp, 0.975),
+            pct_mean = n_mean / nspp,
+            pct_sdev = n_sdev / nspp,
+            pct_02.5 = n_02.5 / nspp,
+            pct_97.5 = n_97.5 / nspp) %>%
+  mutate(type = 'independent') %>%
+  bind_rows(se_df %>% mutate(type = 'linked in data'))
+
+knitr::kable(indep_se_df)
+
+ggplot(indep_se_df, aes(x = bcv_code, color = type)) +
+  geom_col(aes(y = n_mean, fill = bcv_code), width = .5,
+           position = position_dodge(width = .6),
+           show.legend = FALSE) +
+  geom_errorbar(aes(ymin = n_mean - n_sdev, ymax = n_mean + n_sdev),
+                position = position_dodge(width = .6), width = .2) +
+  scale_fill_manual(values = cat_clr$clr, breaks = cat_clr$bcv) +
+  scale_color_manual(values = c('grey20', 'grey65')) +
+  theme_minimal() +
+  labs(x = 'Biocultural vitality', y = 'Number of spp')
+```
+
+OK, it appears from this that randomly sampling IUCN and cultural vitality independently gives nearly identical results.
+
+### Table of values from independently sampled IUCN and cultural status
+
+```{r}
+indep_table_grid_df <- indep_bs_df %>%
+  group_by(sim, iucn_code, cult_code, bcv_code) %>%
+  summarize(n_spp = n()) %>%
+  group_by(iucn_code, cult_code, bcv_code) %>%
+  summarize(n_mean = mean(n_spp),
+            n_sdev = sd(n_spp),
+            lbl = paste0(round(n_mean, 1), ' ± ', round(n_sdev, 1))) %>%
+  mutate(bcv_code = factor(bcv_code, levels = cult_cats),
+       iucn_code = factor(iucn_code, levels = iucn_cats),
+       cult_code = factor(cult_code, levels = cult_cats))
+
+ggplot(indep_table_grid_df, aes(x = cult_code, y = fct_rev(iucn_code))) +
+  geom_tile(aes(fill = bcv_code), color = 'grey40') +
+  geom_text(aes(label = lbl), show.legend = FALSE) +
+  scale_fill_manual(values = cat_clr$clr, breaks = cat_clr$bcv) +
+  theme_minimal() +
+  labs(x = 'Cultural vitality', y = 'IUCN status')
+```
+
+### Are sampled spp similar in distribution to all spp?
+
+According to IUCN 2021-3, distribution of categories (dropping LR/xx obs) is:
+
+| Cat | N Spp |
+|:---:|:-----:|
+| LC  | 73133 |
+| NT  |  7981 | 
+| VU  | 16658 |
+| EN  | 15909 |
+| CR  |  9085 | 
+| EX  |   935 |
+| EW  |    85 |
+| DD  | 20315 |
+ 
+and for comprehensively assessed groups: 
+
+| Cat | N Spp |
+|:---:|:-----:|
+| LC  | 21656 |
+| NT  |  2656 | 
+| VU  |  3352 |
+| EN  |  3076 |
+| CR  |  1737 | 
+| EX  |   299 |
+| EW  |    13 |
+| DD  |  4514 |
+
+Compare these via chi squared test, to each other, and to samples from CKS.  Don't bother with extinct...
+
+```{r}
+cks_iucn <- bcv_raw %>%
+  select(species, cat = iucn_code) %>%
+  distinct() %>%
+  group_by(cat) %>%
+  summarize(nspp_cks = n())
+iucn_dists <- tribble(
+  ~cat, ~nspp_all, ~ nspp_comp,
+  'LC', 73133, 21656,
+  'NT',  7981,  2656,
+  'VU', 16658,  3352,
+  'EN', 15909,  3076,
+  'CR',  9085,  1737,
+  'DD', 20315,  4514
+) %>%
+  left_join(cks_iucn, by = 'cat') %>%
+  mutate(cat = fct_inorder(cat))
+
+chisq.test(iucn_dists %>% select(-cat))
+# data:  iucn_dists %>% select(-cat)
+# X-squared = 1286.7, df = 10, p-value < 2.2e-16
+
+iucn_dists %>% 
+  filter(cat != 'DD') %>%
+  select(-cat, -nspp_all) %>% 
+  chisq.test()
+# data:  iucn_dists %>% filter(cat != "DD") %>% select(-cat, -nspp_all)
+# X-squared = 4.1673, df = 4, p-value = 0.3838
+iucn_dists %>% 
+  filter(cat != 'DD') %>%
+  select(-cat, -nspp_all) %>% sum()
+
+chisq.test(iucn_dists %>% filter(cat != 'DD') %>% select(-cat, -nspp_comp))
+# data:  iucn_dists %>% filter(cat != "DD") %>% select(-cat, -nspp_comp)
+# X-squared = 5.3723, df = 4, p-value = 0.2512
+
+ggplot(iucn_dists %>% gather(type, n, -cat), 
+       aes(x = cat, y = n, fill = type)) +
+  geom_col() +
+  facet_wrap(~ type, ncol = 1, scales = 'free_y')
+```
+
+Removing DD spp (which are way overrepresented in CKS relative to general species) the chi squared test seems to show that the CKS IUCN risk distributions are not significantly different from all species or comprehensively-assessed species...
+
+
