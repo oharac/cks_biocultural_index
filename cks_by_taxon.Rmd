@@ -1,0 +1,136 @@
+---
+title: "CKS Biocultural index exploration"
+author: "Casey O'Hara"
+date: "6/10/2022"
+output: html_document
+---
+
+```{r setup, echo = TRUE, warning = FALSE, message = FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+library(tidyverse)
+library(here)
+library(cowplot)
+library(readxl)
+```
+
+### Read in and clean up data
+
+```{r}
+iucn_cats <- c('data deficient'  = 'DD',
+               'least concern'   = 'LC', 
+               'near threatened' = 'NT', 
+               'vulnerable'      = 'VU',
+               'endangered'      = 'EN',
+               'critically endangered' = 'CR')
+cult_cats <- c('data deficient' = 'DD',
+               'not threatened' = '!T',
+               'vulnerable'     = 'VU',
+               'endangered'     = 'EN')
+
+bcv_score_df <- tribble(
+  ~iucn_code, ~cult_code,  ~bcv_index,  ~bcv_code,
+        'LC',       '!T',        '!T',       '!T',
+        'LC',       'VU',        'V2',       'VU',
+        'LC',       'EN',        'E2',       'EN',
+        'LC',       'DD',        'DD',       'DD',
+        'NT',       '!T',        '!T',       '!T',
+        'NT',       'VU',        'V1',       'VU',
+        'NT',       'EN',        'E2',       'EN',
+        'NT',       'DD',        'DD',       'DD',
+        'VU',       '!T',        'V1',       'VU',
+        'VU',       'VU',        'V1',       'VU',
+        'VU',       'EN',        'E2',       'EN',
+        'VU',       'DD',        'V1',       'VU',
+        'EN',       '!T',        'E1',       'EN',
+        'EN',       'VU',        'E1',       'EN',
+        'EN',       'EN',        'E1',       'EN',
+        'EN',       'DD',        'E1',       'EN',
+        'CR',       '!T',        'E1',       'EN',
+        'CR',       'VU',        'E1',       'EN',
+        'CR',       'EN',        'E1',       'EN',
+        'CR',       'DD',        'E1',       'EN',
+        'CR',       'EX',        'E1',       'EN',
+        'DD',       '!T',        'DD',       'DD',
+        'DD',       'VU',        'V3',       'VU',
+        'DD',       'EN',        'E1',       'EN',
+        'DD',       'DD',        'DD',       'DD')
+bcv_raw <- readxl::read_excel(here('data/CKS_Superclean.xlsx')) %>%
+  janitor::clean_names() %>%
+  mutate(across(everything(), tolower)) %>%
+  mutate(iucn_code = iucn_cats[biological],
+         cult_code = cult_cats[cultural]) %>%
+  left_join(bcv_score_df, by = c('iucn_code', 'cult_code')) %>%
+  filter(!is.na(cult_code) & !is.na(iucn_code)) %>%
+  mutate(bcv_code = factor(bcv_code, levels = cult_cats),
+         iucn_code = factor(iucn_code, levels = iucn_cats),
+         cult_code = factor(cult_code, levels = cult_cats))
+check_df <- readxl::read_excel(here('data/Species_Index.xlsx')) %>%
+  group_by(IUCN_Status) %>%
+  summarize(n = n())
+```
+
+CKS by taxon
+
+```{r}
+cks_by_tx_all <- bcv_raw %>%
+  mutate(n = n()) %>%
+  group_by(taxa) %>%
+  summarize(n = first(n),
+            n_t = n()) %>%
+  mutate(vert = str_detect(taxa, 'mamm|bird|rept|fish')) %>%
+  arrange(desc(n_t), desc(vert)) %>%
+  mutate(taxa = fct_inorder(taxa)) %>%
+  arrange(desc(taxa)) %>%
+  mutate(lbl = paste0(taxa, ' (n = ', n_t, ')'),
+         lbl_y = cumsum(n_t),
+         lbl_y = (lbl_y - lag(lbl_y, default = 0))/2 + lag(lbl_y, default = 0))
+
+cks_by_tx_noverts <- cks_by_tx_all %>%
+  filter(!vert & taxa != 'plant') %>%
+  mutate(gp = 'no verts')
+
+lbls_high_n <- cks_by_tx_all %>%
+  filter(taxa == 'plant' | vert)
+
+lbls_low_n <- cks_by_tx_all %>%
+  filter(taxa != 'plant' & !vert)
+
+tx_col_df <- data.frame(tx = cks_by_tx_all$taxa %>% levels()) %>%
+  mutate(clr = palette.colors(n = n(), 'Dark2', recycle = TRUE))
+
+cks_col_all <- ggplot(cks_by_tx_all, aes(y = n_t, fill = taxa)) +
+  geom_col(aes(x = 1)) +
+  geom_text(data = lbls_high_n, aes(x = 1, y = lbl_y, label = lbl)) +
+  theme_minimal() +
+  theme(axis.title = element_blank(),
+        axis.text.x = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        legend.position = 'none') +
+  scale_fill_manual(breaks = tx_col_df$tx,
+                    values = c(tx_col_df$clr[1:5], 
+                               rep(c('grey70', 'grey50'), length.out = 8)))
+
+cks_col_low <- ggplot(cks_by_tx_noverts, aes(y = n_t, fill = taxa)) +
+  geom_col(aes(x = 1)) +
+  geom_text(data = lbls_low_n, aes(x = 1, y = lbl_y, label = lbl)) +
+  theme_minimal() +
+  theme(axis.title = element_blank(),
+        axis.text.x = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        legend.position = 'none') +
+  scale_fill_manual(breaks = tx_col_df$tx[6:12],
+                    values = c(tx_col_df$clr[6:12])) +
+  scale_y_continuous(position = 'right')
+
+```
+
+```{r}
+p <- ggdraw() +
+  draw_plot(cks_col_all, x = 0, y = 0, width = .35, height = 1.0) +
+  draw_plot(cks_col_low, x = .65, y = 0, width = .35, height = 1.0)
+
+p
+```
+
