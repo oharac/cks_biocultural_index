@@ -10,7 +10,7 @@ knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 library(tidyverse)
 library(here)
 library(sf)
-library(ggwaffle) ### devtools::install_github("liamgilbey/ggwaffle")
+library(ggwaffle) ### remotes::install_github("liamgilbey/ggwaffle")
 library(cowplot)
 library(rnaturalearth)
 ```
@@ -42,35 +42,57 @@ cont_map <- ggplot() +
 
 Gather CKS counts by group type, then uncount them into individual observations - then `ggwaffle::waffle_iron()` to turn into a `geom_waffle`-ready dataframe
 
+```{r redefine waffle_iron function}
+waffle_iron2 <- function(df, rows = 8, na.rm = T) {
+
+  df2 <- df %>%
+    arrange(desc(cultural_group))
+  cols <- ceiling(nrow(df2)/rows)
+  grid_vals <- c(df2$continent_type, 
+                 rep(NA, times = (rows * cols) - length(df2$continent_type)))
+  grid_data <- expand.grid(y = 1:rows, 
+                           x = 1:cols) 
+  grid_data <- grid_data %>%
+    mutate(group = grid_vals) %>%
+    filter(!is.na(group))
+  return(grid_data)
+}
+```
+
 ```{r}
 cks_raw <- readxl::read_excel(here('data/CKS_Superclean.xlsx')) %>%
   janitor::clean_names() %>%
   filter(!is.na(continent)) %>%
-  filter(cultural_group != 'Data deficient')
+  filter(cultural_group != 'Data deficient') %>%
+  group_by(cultural_group) %>%
+  mutate(n = n()) %>%
+  ungroup() %>%
+  mutate(cultural_group = fct_reorder(cultural_group, n)) %>%
+  select(-n)
 
 cult_gp_lbls <- cks_raw %>%
   group_by(cultural_group) %>%
-  summarize(lbl = paste0(first(cultural_group), ' (n = ', n(), ')'))
+  summarize(lbl = paste0(first(cultural_group), ' (n = ', n(), ')')) %>%
+  mutate(lbl = fct_reorder(lbl, desc(as.integer(cultural_group))))
 
 cont_lbls <- cks_raw %>%
   group_by(continent) %>%
   summarize(lbl = paste0(first(continent), ' (n = ', n(), ')'))
 
 cks_long_df <- cks_raw %>%
-  mutate(continent_type = paste(continent, cultural_group, sep = 'X'))
+  mutate(continent_type = paste(continent, cultural_group, sep = 'X')) %>%
+  arrange(cultural_group)
 
 cont_vec <- cks_long_df$continent %>% unique() %>% sort()
 cks_waffle_df <- lapply(cont_vec,
-    FUN = function(cont) {
+    FUN = function(cont) { ### cont = cont_vec[1]
       df <- cks_long_df %>%
         filter(continent == cont) %>%
-        ggwaffle::waffle_iron(aes_d(group = continent_type), 
-                              sample_size = 1) %>%
+        waffle_iron2() %>%
         separate(group, into = c('cont', 'cultural_group'), sep = 'X')
     }) %>%
   bind_rows() %>%
-  left_join(cult_gp_lbls, by = 'cultural_group') %>%
-  mutate(lbl = factor(lbl))
+  left_join(cult_gp_lbls, by = 'cultural_group')
 
 gen_plot <- function(df, continent) {
   brks <- levels(df$lbl)
