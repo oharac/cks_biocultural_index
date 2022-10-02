@@ -214,8 +214,8 @@ panelB <- ggdraw() +
   draw_plot(n_am_p, x = x$n_am, y = y$n_am, width = w$nor, height = h$nor) +
   draw_plot(s_am_p, x = x$s_am, y = y$s_am, width = w$sou, height = h$sou) +
   draw_plot(ocn_p, x = x$ocn, y = y$ocn, width = w$oce, height = h$oce) +
-  draw_plot(glb_p, x = .87, y = .6, width = w$glo, height = h$glo) +
-  draw_label('Multiple\ncontinents\n(n = 4)', x = .873, y = .6, size = 11, hjust = 0, vjust = 1) +
+  draw_plot(glb_p, x = .87, y = .553, width = w$glo, height = h$glo) +
+  draw_label('Multiple\ncontinents\n(n = 4)', x = .873, y = .55, size = 11, hjust = 0, vjust = 1) +
   draw_label('North America\n(n = 89)', 
              x = x$n_am+.003, y = y$n_am, size = 11, hjust = 0, vjust = 1) +
   draw_label('South America\n(n = 68)', 
@@ -228,7 +228,7 @@ panelB <- ggdraw() +
              x = x$asia+.003, y = y$asia, size = 11, hjust = 0, vjust = 1) +
   draw_label('Oceania (n = 48)', 
              x = x$ocn+.003, y = y$ocn, size = 11, hjust = 0, vjust = 1) +
-  draw_plot(lgd, x = .5, y = .05, width = .15, height = .15)
+  draw_plot(lgd, x = .55, y = .08, width = .15, height = .15)
 
 ```
 
@@ -237,11 +237,12 @@ panelB <- ggdraw() +
 
 plot_f <- here('fig1_cis_spp_continent.png')
 
-map_w <- .8
-plot_w <- 12; plot_h <- 5
+waf_w <- .20
+map_w <- .85
+plot_w <- 11; plot_h <- plot_w * map_w * .5
 
 fig1 <- ggdraw() +
-  draw_plot(panelA, x = .01, y = 0, width = (1 - map_w), height = 1) +
+  draw_plot(panelA, x = .01, y = 0, width = waf_w, height = 1) +
   draw_plot(panelB, x = (1 - map_w), y = 0, width = map_w, height = 1) +
   draw_label('A', x = 0.00, y = .9, hjust = 0, vjust = 1, size = 16, fontface = 'bold') +
   draw_label('B', x = 0.25, y = .9, hjust = 0, vjust = 1, size = 16, fontface = 'bold')
