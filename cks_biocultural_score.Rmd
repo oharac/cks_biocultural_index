@@ -10,6 +10,7 @@ knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 library(tidyverse)
 library(here)
 library(readxl)
+library(cowplot)
 ```
 
 ### Read in and clean up data
@@ -162,34 +163,36 @@ x1
 sqrt(x1$statistic / sum(cks_tbl))
 ```
 
+### Plots
+
 but are bio and cultural status independent of continent?
 ```{r}
 bcv_by_continent <- bcv_raw %>%
   filter(continent != 'global' & continent != '.') %>%
-  select(continent, iucn_code, cult_code, bcv_code) %>%
-  group_by(continent) %>%
+  select(category = continent, iucn_code, cult_code, bcv_code) %>%
+  group_by(category) %>%
   mutate(n = n()) %>%
   gather(code, value, ends_with('code')) %>%
   mutate(value = case_when(value %in% c('LC', 'NT') ~ 'notT',
                            value == 'CR' ~ 'EN',
                            TRUE ~ value)) %>%
-  group_by(continent, code, value) %>%
+  group_by(category, code, value) %>%
   summarize(n = first(n),
             n_cat = n(),
             pct_cat = n_cat / n) %>%
   mutate(value = factor(value, levels = c('notT', 'VU', 'EN', 'DD'))) %>%
   ungroup() %>%
   arrange(value, pct_cat) %>%
-  mutate(continent_lbl = paste0(str_to_title(continent), '\n(n = ', n, ')'),
-         continent_lbl = fct_inorder(continent_lbl),
+  mutate(cat_lbl = paste0(str_to_title(category), '\n(n = ', n, ')'),
+         cat_lbl = fct_inorder(cat_lbl),
          code = case_when(code == 'bcv_code' ~ 'Biocultural status',
                           code == 'cult_code' ~ 'Cultural status',
                           code == 'iucn_code' ~ 'Biological status',
                           TRUE ~ 'oops'),
          code = factor(code, levels = c('Biological status', 'Cultural status', 'Biocultural status')))
 
-x <- ggplot(bcv_by_continent, 
-            aes(y = continent_lbl, x = pct_cat, fill = fct_rev(value))) +
+plot_bcv_continent <- ggplot(bcv_by_continent, 
+            aes(y = cat_lbl, x = pct_cat, fill = fct_rev(value))) +
   geom_col(position = 'stack') +
   scale_fill_manual(values = c('#4B0055', '#009B95', '#FDE333', 'grey70'),
                     limits = c('notT', 'VU', 'EN', 'DD')) +
@@ -216,34 +219,35 @@ or are bio and cultural status independent of cultural group type?
 ```{r}
 bcv_by_group_type <- bcv_raw %>%
   filter(cultural_group != 'data deficient') %>%
-  select(cultural_group, iucn_code, cult_code, bcv_code) %>%
-  group_by(cultural_group) %>%
+  select(category = cultural_group, iucn_code, cult_code, bcv_code) %>%
+  group_by(category) %>%
   mutate(n = n()) %>%
   gather(code, value, ends_with('code')) %>%
   mutate(value = case_when(value %in% c('LC', 'NT') ~ 'notT',
                            value == 'CR' ~ 'EN',
                            TRUE ~ value)) %>%
-  group_by(cultural_group, code, value) %>%
+  group_by(category, code, value) %>%
   summarize(n = first(n),
             n_cat = n(),
             pct_cat = n_cat / n) %>%
   mutate(value = factor(value, levels = c('notT', 'VU', 'EN', 'DD'))) %>%
   ungroup() %>%
   arrange(value, pct_cat) %>%
-  mutate(gp_lbl = paste0(str_to_title(cultural_group), '\n(n = ', n, ')'),
-         # gp_lbl = fct_inorder(gp_lbl) %>% fct_rev(), 
+  mutate(cat_lbl = paste0(str_to_title(category), '\n(n = ', n, ')'),
+         # cat_lbl = fct_inorder(cat_lbl) %>% fct_rev(), 
            ### by highest not threatened
-         gp_lbl = factor(gp_lbl) %>% fct_rev(), 
+         cat_lbl = factor(cat_lbl), 
            ### alpha order
          code = case_when(code == 'bcv_code' ~ 'Biocultural status',
                           code == 'cult_code' ~ 'Cultural status',
                           code == 'iucn_code' ~ 'Biological status',
                           TRUE ~ 'oops'),
          code = factor(code, levels = c('Biological status', 'Cultural status', 'Biocultural status'))) %>%
-  mutate(gp_lbl = fct_reorder(gp_lbl, n))
+  arrange(desc(code), value, pct_cat) %>%
+  mutate(cat_lbl = fct_inorder(cat_lbl))
 
-x <- ggplot(bcv_by_group_type, 
-            aes(y = gp_lbl, x = pct_cat, fill = fct_rev(value))) +
+plot_bcv_gp <- ggplot(bcv_by_group_type, 
+            aes(y = cat_lbl, x = pct_cat, fill = fct_rev(value))) +
   geom_col(position = 'stack') +
   scale_fill_manual(values = c('#4B0055', '#009B95', '#FDE333', 'grey70'),
                     limits = c('notT', 'VU', 'EN', 'DD')) +
@@ -265,6 +269,53 @@ ggsave(plot_f, height = 2.5, width = 5, dpi = 300)
 
 knitr::include_graphics(plot_f)
 ```
+
+```{r combine plots vertical}
+combined_df <- bind_rows(bcv_by_continent %>% 
+                           arrange(-cat_lbl) %>%
+                           mutate(gp = 'A. Continent'), 
+                         bcv_by_group_type %>%
+                           arrange(-cat_lbl) %>%
+                           mutate(gp = 'B. Cultural group type')) %>%
+  mutate(cat_lbl = str_remove(cat_lbl, 'Socio-Cultural')) %>%
+  mutate(cat_lbl = fct_inorder(cat_lbl))
+
+
+plot_raw <- ggplot(combined_df, 
+            aes(y = cat_lbl, x = pct_cat, fill = fct_rev(value))) +
+  geom_col(position = 'stack') +
+  scale_fill_manual(values = c('#4B0055', '#009B95', '#FDE333', 'grey70'),
+                    limits = c('notT', 'VU', 'EN', 'DD')) +
+  theme_minimal(base_size = 9) +
+  scale_x_continuous(breaks = c(0, .25, .5, .75, 1.0),
+                     labels = c('0%', '25%', '50%', '75%', '100%'),
+                     limits = c(0, 1.1),
+                     expand = c(0, 0)) +
+  theme(axis.title = element_blank(),
+        axis.text.x = element_text(angle = 90, vjust = .5, hjust = 1),
+        strip.text.x = element_text(hjust = 0),
+        strip.text.y = element_blank(),
+        panel.grid.major.y = element_blank(),
+        panel.grid.minor = element_blank()) +
+  labs(fill = 'Status') +
+  facet_grid(gp ~ code, scales = 'free_y', space = 'free_y')
+
+plot_labelled <- ggdraw() +
+  draw_plot(plot_raw) +
+  draw_label('A', x = 0, y = .98, hjust = 0, vjust = 1,
+             fontface = 'bold', size = 9) +
+  draw_label('B', x = 0, y = 0.48, hjust = 0, vjust = 1,
+             fontface = 'bold', size = 9)
+  
+
+plot_f <- here('fig_bcv_combined.png')
+ggsave(plot_f, height = 3.5, width = 5, dpi = 300)
+
+knitr::include_graphics(plot_f)
+
+```
+
+### Test independence
 
 ```{r}
 sims <- 1000

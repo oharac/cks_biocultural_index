@@ -19,9 +19,78 @@ library(rnaturalearth)
 
 Generate a plot showing a continent map, each continent overlaid with a waffle plot showing the number and distribution of CKS by cultural group type.  
 
-Is a map really necessary? because could also just do a facet grid.
+Also, add a panel A that shows waffle plot by taxonomic group.
 
-# Methods
+# Methods: Panel A
+
+
+```{r}
+cks_raw <- readxl::read_excel(here('data/CKS_Superclean.xlsx')) %>%
+  janitor::clean_names() %>%
+  filter(!is.na(continent)) %>%
+  filter(cultural_group != 'Data deficient') %>%
+  group_by(cultural_group) %>%
+  mutate(n = n()) %>%
+  ungroup() %>%
+  mutate(cultural_group = fct_reorder(cultural_group, n)) %>%
+  select(-n)
+```
+
+```{r}
+tx_lbls <- cks_raw %>%
+  select(taxa, species) %>%
+  distinct() %>%
+  group_by(taxa) %>%
+  summarize(n = n()) %>%
+  mutate(tx_lbl = sprintf('%s (n = %s)', taxa, n),
+         tx_lbl = fct_reorder(tx_lbl, desc(n)))
+
+nr <- 20 ### number of rows for panel A
+tx_plot_df <- cks_raw %>%
+  full_join(tx_lbls) %>%
+  arrange(desc(tx_lbl))
+  
+nc <- ceiling(nrow(tx_plot_df)/nr) ### number of columns
+
+grid_vals <- c(tx_plot_df$tx_lbl, 
+               rep(NA, times = (nr * nc) - length(tx_plot_df$tx_lbl)))
+grid_data <- expand.grid(y = 1:nr, 
+                         x = 1:nc) 
+grid_data <- grid_data %>%
+  mutate(group = grid_vals) %>%
+  filter(!is.na(group)) 
+
+df <- grid_data %>%
+  mutate(tx_lbl = levels(tx_plot_df$tx_lbl)[group],
+         tx_lbl = factor(tx_lbl, levels = levels(tx_lbls$tx_lbl)))
+```
+
+``` {r make a discrete palette for 12 colors}
+library(rcartocolor)
+
+p12 <- carto_pal(12, "Safe") %>%
+  colorspace::darken()
+# swatch(p12)
+
+```
+
+``` {r}
+
+panelA <- ggplot() +
+  geom_waffle(data = df, 
+              aes(y, -x, fill = rev(tx_lbl)), size = .25, color = 'white') +
+  guides(fill = guide_legend(ncol = 2, reverse = FALSE) ) +
+  scale_fill_manual(values = p12) +
+  coord_equal() +
+  theme_void() +
+  theme(legend.key.size = unit(.35, 'cm'),
+        legend.title = element_blank(),
+        legend.position = 'bottom')
+
+```
+
+
+# Methods: Panel B
 
 ## Generate a continent panel
 
@@ -34,7 +103,7 @@ continents_sf <- rnaturalearth::ne_countries(returnclass = 'sf') %>%
 
 cont_map <- ggplot() +
   geom_sf(data = continents_sf, aes(geometry = geometry),
-          color = NA, fill = 'grey90') +
+          color = 'grey80', size = .25, fill = 'grey90') +
   theme_void()
 ```
 
@@ -60,15 +129,6 @@ waffle_iron2 <- function(df, rows = 8, na.rm = T) {
 ```
 
 ```{r}
-cks_raw <- readxl::read_excel(here('data/CKS_Superclean.xlsx')) %>%
-  janitor::clean_names() %>%
-  filter(!is.na(continent)) %>%
-  filter(cultural_group != 'Data deficient') %>%
-  group_by(cultural_group) %>%
-  mutate(n = n()) %>%
-  ungroup() %>%
-  mutate(cultural_group = fct_reorder(cultural_group, n)) %>%
-  select(-n)
 
 cult_gp_lbls <- cks_raw %>%
   group_by(cultural_group) %>%
@@ -103,7 +163,7 @@ gen_plot <- function(df, continent) {
     coord_equal() +
     theme_void() +
     theme(legend.key.size = unit(.35, 'cm')) +
-    labs(fill = 'Each square represents\none cultural keystone species')
+    labs(fill = 'Each square represents\none culturally important species')
   return(p)
 }
 
@@ -133,13 +193,12 @@ map_p <- get_panel(cont_map)
 ```
 
 ``` {r}
-plot_w <- 10; plot_h <- 5; ar = plot_w / plot_h
 
 hw_df <- cks_waffle_df %>%
   group_by(cont) %>%
   summarize(h = max(x), w = max(y)) %>%
   mutate(w = .08 * w/8,
-         h = .08 * h/8 * ar,
+         h = .08 * h/8 * 2,
          cont = tolower(cont) %>% str_sub(1, 3))
 
 x <- list(afr = .5, ocn = .8, asia = .7, eur = .5, n_am = .2, s_am = .31)
@@ -147,7 +206,7 @@ y <- list(afr = .4, ocn = .19, asia = .6, eur = .67, n_am = .58, s_am = .25)
 w <- as.list(hw_df$w) %>% setNames(hw_df$cont)
 h <- as.list(hw_df$h) %>% setNames(hw_df$cont)
 
-p <- ggdraw() +
+panelB <- ggdraw() +
   draw_plot(map_p, x = 0, y = 0, width = 1, height = 1) +
   draw_plot(afr_p, x = x$afr, y = y$afr, width = w$afr, height = h$afr) +
   draw_plot(eur_p, x = x$eur, y = y$eur, width = w$eur, height = h$eur) +
@@ -155,8 +214,8 @@ p <- ggdraw() +
   draw_plot(n_am_p, x = x$n_am, y = y$n_am, width = w$nor, height = h$nor) +
   draw_plot(s_am_p, x = x$s_am, y = y$s_am, width = w$sou, height = h$sou) +
   draw_plot(ocn_p, x = x$ocn, y = y$ocn, width = w$oce, height = h$oce) +
-  draw_plot(glb_p, x = .9, y = .6, width = w$glo, height = h$glo) +
-  draw_label('Global\n(n = 4)', x = .903, y = .6, size = 11, hjust = 0, vjust = 1) +
+  draw_plot(glb_p, x = .87, y = .6, width = w$glo, height = h$glo) +
+  draw_label('Multiple\ncontinents\n(n = 4)', x = .873, y = .6, size = 11, hjust = 0, vjust = 1) +
   draw_label('North America\n(n = 89)', 
              x = x$n_am+.003, y = y$n_am, size = 11, hjust = 0, vjust = 1) +
   draw_label('South America\n(n = 68)', 
@@ -169,10 +228,25 @@ p <- ggdraw() +
              x = x$asia+.003, y = y$asia, size = 11, hjust = 0, vjust = 1) +
   draw_label('Oceania (n = 48)', 
              x = x$ocn+.003, y = y$ocn, size = 11, hjust = 0, vjust = 1) +
-  draw_plot(lgd, x = .1, y = .05, width = .15, height = .15)
+  draw_plot(lgd, x = .5, y = .05, width = .15, height = .15)
 
-plot_f <- here('fig1b.png')
-ggsave(plot_f, height = plot_h, width = plot_w, dpi = 300)
+```
+
+
+```{r}
+
+plot_f <- here('fig1_cis_spp_continent.png')
+
+map_w <- .8
+plot_w <- 12; plot_h <- 5
+
+fig1 <- ggdraw() +
+  draw_plot(panelA, x = .01, y = 0, width = (1 - map_w), height = 1) +
+  draw_plot(panelB, x = (1 - map_w), y = 0, width = map_w, height = 1) +
+  draw_label('A', x = 0.00, y = .9, hjust = 0, vjust = 1, size = 16, fontface = 'bold') +
+  draw_label('B', x = 0.25, y = .9, hjust = 0, vjust = 1, size = 16, fontface = 'bold')
+
+ggsave(plot_f, height = plot_h, width = plot_w, units = 'in', dpi = 600)
 
 knitr::include_graphics(plot_f)
 ```
