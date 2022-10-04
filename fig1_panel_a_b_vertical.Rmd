@@ -42,10 +42,10 @@ tx_lbls <- cks_raw %>%
   distinct() %>%
   group_by(taxa) %>%
   summarize(n = n()) %>%
-  mutate(tx_lbl = sprintf('%s (n = %s)', taxa, n),
+  mutate(tx_lbl = sprintf('%s (%s)', taxa, n),
          tx_lbl = fct_reorder(tx_lbl, desc(n)))
 
-nr <- 30 ### number of rows (actually columns...???) for panel A
+nr <- 40 ### number of rows (actually columns...???) for panel A
 tx_plot_df <- cks_raw %>%
   full_join(tx_lbls) %>%
   arrange(desc(tx_lbl))
@@ -84,6 +84,7 @@ panelA <- ggplot() +
   coord_equal() +
   theme_void() +
   theme(legend.key.size = unit(.35, 'cm'),
+        legend.text = element_text(size = 8),
         legend.title = element_blank(),
         legend.position = 'right')
 
@@ -132,12 +133,12 @@ waffle_iron2 <- function(df, rows = 8, na.rm = T) {
 
 cult_gp_lbls <- cks_raw %>%
   group_by(cultural_group) %>%
-  summarize(lbl = paste0(first(cultural_group), ' (n = ', n(), ')')) %>%
+  summarize(lbl = paste0(first(cultural_group), ' (', n(), ')')) %>%
   mutate(lbl = fct_reorder(lbl, desc(as.integer(cultural_group))))
 
 cont_lbls <- cks_raw %>%
   group_by(continent) %>%
-  summarize(lbl = paste0(first(continent), ' (n = ', n(), ')'))
+  summarize(lbl = paste0(first(continent), ' (', n(), ')'))
 
 cks_long_df <- cks_raw %>%
   mutate(continent_type = paste(continent, cultural_group, sep = 'X')) %>%
@@ -162,7 +163,8 @@ gen_plot <- function(df, continent) {
     scale_fill_manual(breaks = brks, values = hcl.colors(5)) +
     coord_equal() +
     theme_void() +
-    theme(legend.key.size = unit(.35, 'cm')) +
+    theme(legend.text = element_text(size = 8),
+          legend.key.size = unit(.35, 'cm')) +
     labs(fill = 'Each square represents\none culturally important species')
   return(p)
 }
@@ -215,18 +217,18 @@ panelB <- ggdraw() +
   draw_plot(s_am_p, x = x$s_am, y = y$s_am, width = w$sou, height = h$sou) +
   draw_plot(ocn_p, x = x$ocn, y = y$ocn, width = w$oce, height = h$oce) +
   draw_plot(glb_p, x = .87, y = .553, width = w$glo, height = h$glo) +
-  draw_label('Multiple\ncontinents\n(n = 4)', x = .873, y = .55, size = 11, hjust = 0, vjust = 1) +
-  draw_label('North America\n(n = 89)', 
+  draw_label('Multiple\ncontinents\n(4)', x = .873, y = .55, size = 11, hjust = 0, vjust = 1) +
+  draw_label('North America\n(89)', 
              x = x$n_am+.003, y = y$n_am, size = 11, hjust = 0, vjust = 1) +
-  draw_label('South America\n(n = 68)', 
+  draw_label('South America\n(68)', 
              x = x$s_am+.003, y = y$s_am, size = 11, hjust = 0, vjust = 1) +
-  draw_label('Europe (n = 31)', 
+  draw_label('Europe (31)', 
              x = x$eur+.003, y = y$eur, size = 11, hjust = 0, vjust = 1) +
-  draw_label('Africa (n = 63)', 
+  draw_label('Africa (63)', 
              x = x$afr+.003, y = y$afr, size = 11, hjust = 0, vjust = 1) +
-  draw_label('Asia (n = 79)', 
+  draw_label('Asia (79)', 
              x = x$asia+.003, y = y$asia, size = 11, hjust = 0, vjust = 1) +
-  draw_label('Oceania (n = 48)', 
+  draw_label('Oceania (48)', 
              x = x$ocn+.003, y = y$ocn, size = 11, hjust = 0, vjust = 1) +
   draw_plot(lgd, x = .55, y = .08, width = .15, height = .15)
 
@@ -242,10 +244,10 @@ map_w <- 1
 plot_w <- 8; plot_h <- 5
 
 fig1 <- ggdraw() +
-  draw_plot(panelA, x = 0, y = .73, width = waf_w, height = .25) +
-  draw_plot(panelB, x = 0, y = 0, width = map_w, height = 0.75) +
-  draw_label('A', x = 0.10, y = .95, hjust = 0, vjust = 1, size = 16, fontface = 'bold') +
-  draw_label('B', x = 0.10, y = .64, hjust = 0, vjust = 1, size = 16, fontface = 'bold')
+  draw_plot(panelA, x = 0, y = .78, width = waf_w, height = .22) +
+  draw_plot(panelB, x = 0, y = 0, width = map_w, height = 0.78) +
+  draw_label('A', x = .05, y = .99, hjust = 0, vjust = 1, size = 16, fontface = 'bold') +
+  draw_label('B', x = .05, y = .62, hjust = 0, vjust = 1, size = 16, fontface = 'bold')
 
 ggsave(plot_f, height = plot_h, width = plot_w, units = 'in', dpi = 600)
 
