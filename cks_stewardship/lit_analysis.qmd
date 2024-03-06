@@ -1,0 +1,8 @@
+---
+title: "CKS as a tool for biocultural stewardship: A global review"
+format: 
+  html:
+    embed-resources: true
+editor: source
+---
+
