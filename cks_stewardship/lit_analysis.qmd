@@ -4,5 +4,105 @@ format:
   html:
     embed-resources: true
 editor: source
+execute:
+  message: false
+  warning: false
 ---
+
+```{r}
+library(tidyverse)
+library(here)
+library(readxl)
+```
+
+Examine the data, both linear and log transformed (to examine exponential growth)
+```{r}
+lit_data <- read_excel(here('data/CKS_Annual_Growth.xlsx')) %>%
+  janitor::clean_names() %>%
+  filter(!is.na(year)) %>%
+  complete(year = 1994:2022, fill = list(docs = 0)) %>%
+  mutate(year94 = year - 1994,
+         year03 = ifelse(year >= 2003, year - 2003, NA)) %>%
+  mutate(cum_docs = cumsum(docs))
+
+# ggplot(lit_data, aes(x = year, y = docs)) +
+#   geom_col() +
+#   theme_minimal()
+# 
+# ggplot(lit_data, aes(x = year, y = log10(docs))) +
+#   geom_col() +
+#   theme_minimal()
+```
+
+### linear models
+
+First, with all years; second, excluding 1994
+```{r}
+lm1 <- lm(docs ~ year94, data = lit_data)
+broom::tidy(lm1)
+
+lm2 <- lm(docs ~ year03, data = lit_data)
+broom::tidy(lm2)
+```
+
+### log linear models
+
+```{r}
+lm3 <- lm(log(docs) ~ year94, data = lit_data %>% filter(docs > 0))
+broom::tidy(lm3)
+
+lm4 <- lm(log(docs) ~ year03, data = lit_data)
+broom::tidy(lm4)
+```
+
+## Final plots?
+
+```{r}
+brks_lbls <- lit_data %>%
+  filter(year %% 5 == 0)
+# ggplot(lit_data, aes(x = year94, y = docs)) +
+#   geom_col() +
+#   geom_abline(intercept = lm1$coefficients[1], slope = lm1$coefficients[2], color = 'red') +
+#   scale_x_continuous(breaks = brks_lbls$year94, labels = brks_lbls$year) +
+#   theme_minimal()
+# 
+# ggplot(lit_data, aes(x = year03, y = docs)) +
+#   geom_col() +
+#   geom_abline(intercept = lm2$coefficients[1], slope = lm2$coefficients[2], color = 'red') +
+#   scale_x_continuous(breaks = brks_lbls$year03, labels = brks_lbls$year) +
+#   theme_minimal()
+
+exp_fxn <- function(x, mdl) {
+  exp(x * mdl$coefficients[2] + mdl$coefficients[1])
+}
+ggplot(lit_data, aes(x = year94, y = docs)) +
+  geom_col() +
+  geom_function(fun = exp_fxn, args = list(mdl = lm3), color = 'red') +
+  scale_x_continuous(breaks = brks_lbls$year94, labels = brks_lbls$year) +
+  theme_minimal() +
+  labs(x = 'Year', y = 'Number of documents')
+ggplot(lit_data, aes(x = year03, y = docs)) +
+  geom_col() +
+  geom_function(fun = exp_fxn, args = list(mdl = lm4), color = 'red') +
+  scale_x_continuous(breaks = brks_lbls$year03, labels = brks_lbls$year) +
+  theme_minimal() +
+  labs(x = 'Year', y = 'Number of documents')
+
+```
+
+## Growth rate of total literature
+
+```{r}
+lm5 <- lm(log(cum_docs) ~ year03, data = lit_data)
+broom::tidy(lm5)
+
+ggplot(lit_data, aes(x = year03, y = cum_docs)) +
+  geom_col() +
+  geom_function(fun = exp_fxn, args = list(mdl = lm5), color = 'red') +
+  scale_x_continuous(breaks = brks_lbls$year03, labels = brks_lbls$year) +
+  theme_minimal() +
+  labs(x = 'Year', y = 'Number of documents')
+```
+
+
 
